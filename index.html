@@ -828,6 +828,9 @@ function _emailToId(email){ return email.replace(/\./g,"_dot_").replace(/@/g,"_a
 // リアルタイム同期リスナー管理
 let _firestoreUnsubscribe = null;
 let _syncRetryTimer = null;
+// 自分の書き込み完了によるonSnapshot誤発火を防ぐためのタイムスタンプ
+let _lastLocalSaveTime = 0;
+const _LOCAL_SAVE_GRACE_MS = 8000; // 書き込み後8秒以内のsnapshotは自分の書き込みとみなす
 
 // リアルタイム同期開始（ログイン後に呼び出す）
 function _startRealtimeSync(email){
@@ -845,10 +848,22 @@ function _startRealtimeSync(email){
       _setSyncStatus("ing","保存中…");
       return;
     }
+    // ✅ ステータスをOKに更新
     _setSyncStatus("ok","同期済み ✓");
     if(!snap.exists) return;
+
+    // 【重要】自分の書き込み完了によるイベントかどうかを判定
+    // 自分が書き込んでから _LOCAL_SAVE_GRACE_MS 以内であれば
+    // 「自分の保存確定通知」なのでアンドゥ履歴を壊さない
+    const timeSinceLocalSave = Date.now() - _lastLocalSaveTime;
+    if(timeSinceLocalSave < _LOCAL_SAVE_GRACE_MS){
+      // 自分の書き込み完了 → localStorageだけ更新してUIには手を加えない
+      localStorage.setItem("ud_"+email, JSON.stringify(snap.data()));
+      return;
+    }
+
+    // ここに来た = 別デバイスからの更新
     const data=snap.data();
-    // メモリ上のデータを更新
     trialData=data.trial||[];
     enrollData=data.enroll||[];
     students=data.students||[];
@@ -856,17 +871,14 @@ function _startRealtimeSync(email){
     calEvents=data.calEvents||[];
     taskBoards=data.taskBoards||[];
     taskStaff=data.taskStaff||[];
-    // localStorageにも反映
     localStorage.setItem("ud_"+email, JSON.stringify(data));
-    // アンドゥ履歴をリセット（他デバイスの変更なので）
+    // 別デバイスの変更なのでアンドゥ履歴はリセット
     undoStack=[]; redoStack=[]; _savedState=_captureState(); updateUndoRedoBtns();
-    // 画面を再描画
     renderAll();
     showToast("🔄 他のデバイスから更新されました");
   }, err=>{
     console.warn("リアルタイム同期エラー:", err);
     _setSyncStatus("err","同期エラー ⚠");
-    // Permissionエラーの場合は分かりやすく案内
     if(err.code==="permission-denied"){
       showToast("⚠️ Firestoreのセキュリティルールを確認してください");
     }
@@ -961,6 +973,8 @@ async function _loadFromFirebase(email){
 function _saveToFirebase(email, data){
   if(!_db) return;
   _setSyncStatus("ing","保存中…");
+  // 書き込み時刻を記録（onSnapshotが自分の書き込みかどうかの判定に使う）
+  _lastLocalSaveTime = Date.now();
   _db.doc("classrooms/"+_emailToId(email)).set(data)
     .then(()=>_setSyncStatus("ok","同期済み ✓"))
     .catch(e=>{
@@ -1074,6 +1088,8 @@ async function doLogin(){
   // アンドゥ履歴をリセット
   undoStack=[]; redoStack=[]; _savedState=_captureState(); updateUndoRedoBtns();
   // ログイン時に必ずFirestoreへ同期（元デバイスのデータを他デバイスと共有）
+  // ★ ログイン直後のonSnapshot誤発火でアンドゥ履歴が消えないよう先にタイムスタンプをセット
+  _lastLocalSaveTime = Date.now();
   _saveToFirebase(email, {trial:trialData,enroll:enrollData,students,monthly:monthlyData,calEvents,taskBoards,taskStaff});
   // リアルタイム同期開始（他デバイスの変更を自動反映）
   _startRealtimeSync(email);
