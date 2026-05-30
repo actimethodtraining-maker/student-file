@@ -185,14 +185,11 @@ thead th.col-task {
 }
 #user-modal-content h2 { font-size: 22px; font-weight: 800; color: #F47355; margin-bottom: 8px; }
 #user-modal-content p { color: #9B7B76; font-size: 14px; }
-#user-selector {
-  width: 100%; padding: 12px; margin: 20px 0; font-size: 15px;
-  border-radius: 12px; border: 2px solid #FBE0DA; outline: none;
-  font-family: 'Nunito', sans-serif; font-weight: 600;
-  background: white; color: #3D2C2A;
+.user-option {
+  padding: 12px 16px; font-size: 15px; font-family: 'Nunito', sans-serif;
+  font-weight: 600; color: #3D2C2A; cursor: pointer; background: white;
 }
-#user-selector:focus { border-color: #F47355; }
-#user-selector option { background: white; color: #3D2C2A; }
+.user-option:hover { background: #FFF0ED; color: #F47355; }
 #user-confirm-btn {
   width: 100%; background: linear-gradient(135deg, #F47355, #17C5C4);
   color: white; border: none; padding: 14px; border-radius: 24px;
@@ -253,14 +250,19 @@ thead th { overflow: visible !important; }
   <div id="user-modal-content">
     <h2>👋 こんにちは！</h2>
     <p>操作している人を選んでください</p>
-    <select id="user-selector">
-      <option value="">選択してください...</option>
-      <option value="ニカ">ニカ</option>
-      <option value="三浦">三浦</option>
-      <option value="浅沼">浅沼</option>
-      <option value="松下">松下</option>
-      <option value="小林">小林</option>
-    </select>
+    <div id="user-custom-select" style="position:relative;margin:20px 0;">
+      <div id="user-select-display" onclick="toggleUserDropdown()" style="width:100%;padding:12px 16px;border-radius:12px;border:2px solid #FBE0DA;background:white;color:#9B7B76;font-size:15px;font-family:'Nunito',sans-serif;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;">
+        <span id="user-select-label">選択してください...</span>
+        <span>▾</span>
+      </div>
+      <div id="user-select-options" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:white;border:2px solid #FBE0DA;border-radius:12px;box-shadow:0 8px 24px rgba(244,115,85,0.15);z-index:100;overflow:hidden;">
+        <div class="user-option" data-value="ニカ">ニカ</div>
+        <div class="user-option" data-value="三浦">三浦</div>
+        <div class="user-option" data-value="浅沼">浅沼</div>
+        <div class="user-option" data-value="松下">松下</div>
+        <div class="user-option" data-value="小林">小林</div>
+      </div>
+    </div>
     <button id="user-confirm-btn">アプリを開始する ✨</button>
   </div>
 </div>
@@ -368,7 +370,24 @@ function calcProgress(schoolIdx, topicId=null) {
 }
 
 function setupEventListeners() {
-  document.getElementById('user-confirm-btn').addEventListener('click',()=>{ const n=document.getElementById('user-selector').value; if(!n) return; localStorage.setItem('progress_app_user',n); currentUserName=n; document.getElementById('user-select-modal').style.display='none'; document.getElementById('loading').style.display='flex'; });
+  // カスタムドロップダウン
+  let selectedUser = '';
+  document.querySelectorAll('.user-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      selectedUser = opt.dataset.value;
+      document.getElementById('user-select-label').textContent = selectedUser;
+      document.getElementById('user-select-label').style.color = '#3D2C2A';
+      document.getElementById('user-select-options').style.display = 'none';
+    });
+  });
+
+  document.getElementById('user-confirm-btn').addEventListener('click',()=>{
+    if(!selectedUser) return;
+    localStorage.setItem('progress_app_user', selectedUser);
+    currentUserName = selectedUser;
+    document.getElementById('user-select-modal').style.display='none';
+    document.getElementById('loading').style.display='flex';
+  });
   document.getElementById('sync-btn').addEventListener('click',triggerSync);
   document.getElementById('close-panel').addEventListener('click',closeCommentPanel);
   document.getElementById('submit-comment').addEventListener('click',submitComment);
@@ -527,6 +546,18 @@ async function resolveAllComments() {
   try { const snap=await new Promise(res=>{const u=onSnapshot(query(collection(db,'comments'),where('courseWorkId','==',ctxCwId),where('schoolUserId','==',ctxUserId),where('resolved','==',false)),s=>{u();res(s);});}); await Promise.all(snap.docs.map(d=>updateDoc(doc(db,'comments',d.id),{resolved:true}))); }
   finally { btn.disabled=false; btn.textContent='✓ すべて解決'; }
 }
+
+function toggleUserDropdown() {
+  const opts = document.getElementById('user-select-options');
+  opts.style.display = opts.style.display === 'none' ? 'block' : 'none';
+}
+// ドロップダウン外クリックで閉じる
+document.addEventListener('click', e => {
+  if (!document.getElementById('user-custom-select')?.contains(e.target)) {
+    const opts = document.getElementById('user-select-options');
+    if (opts) opts.style.display = 'none';
+  }
+});
 
 let toastTimer=null;
 function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; if(toastTimer) clearTimeout(toastTimer); toastTimer=setTimeout(()=>{t.style.display='none';},2500); }
